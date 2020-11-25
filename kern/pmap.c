@@ -107,7 +107,7 @@ boot_alloc(uint32_t n)
 		return nextfree;
 	}
 	n = ROUNDUP(n, PGSIZE);
-	if((uint32_t)nextfree > (~(uint32_t)0) - n){
+	if((uint32_t)nextfree > (~(uint32_t)0 - n + 1) || PADDR(nextfree) > (npages * PGSIZE - n)){
 		panic("boot_alloc: OOM\n");
 	}
 	result = nextfree;
