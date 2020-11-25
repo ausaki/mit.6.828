@@ -1,7 +1,5 @@
 # Lab02
 
-
-
 ## E01
 
 实现 `boot_alloc` 时注意地址需要按照 PGSIZE 对齐和内存溢出.
@@ -75,10 +73,74 @@
 
 一级页表和二级页表都是4KB, 可以存储1024个条目, 每个条目4字节. 一级页表的条目保存着指向二级页表的物理地址. 条目的最低 10bit 用于存储访问权限.
 
+%cr3 寄存器指向 page directory.
 
 ## E05
 
+使用 `boot_map_region`.
 
+
+## Q03
+
+> We have placed the kernel and user environment in the same address space. Why will user programs not be able to read or write the kernel's memory? What specific mechanisms protect the kernel memory?
+
+页表项的低 12bit 保存了页的访问权限, MMU 在翻译地址时会检查权限. 另外, CPU 还会使用一个模式标志位(%cr0 的 CPL)来区分当前是用户模式还是内核模式. 
+
+具体可以参考: 
+
+- [页表, 地址翻译和控制寄存器](https://pdos.csail.mit.edu/6.828/2018/lec/x86_translation_and_registers.pdf)
+
+- [页表, 地址翻译](https://pdos.csail.mit.edu/6.828/2018/lec/l-vm.pdf)
+
+
+## Q04
+
+>  What is the maximum amount of physical memory that this operating system can support? Why?
+
+根据 `pmap.c` 的代码可以知道, `pages` 被映射到 `UPAGES` 区域, `UPAGES` 区域大小等于 `PTSIZE`, 即 4MB, 每个 `struct PageInfo` 结构等于 8 bytes, 因此总的可以保存 `2 ^ 22 / 2 ^ 3 = 2 ^ 19 = 512K` 个 `struct PageInfo`. 所以支持的最大内存等于 `512K * 4KB = 2GB`.
+
+## Q05
+
+>  How much space overhead is there for managing memory, if we actually had the maximum amount of physical memory? How is this overhead broken down?
+
+- 一级页表 = 4KB
+
+- 一个二级页表 = 4KB, 最多 1K 个二级页表, 总的 = 4MB.
+
+- pages 链表 (`UPAGES`) 最多 4MB.
+
+## Q06
+
+> Revisit the page table setup in kern/entry.S and kern/entrypgdir.c. Immediately after we turn on paging, EIP is still a low number (a little over 1MB). At what point do we transition to running at an EIP above KERNBASE? What makes it possible for us to continue executing at a low EIP between when we enable paging and when we begin running at an EIP above KERNBASE? Why is this transition necessary? 
+
+开启分页机制:
+
+```
+# Load the physical address of entry_pgdir into cr3.  entry_pgdir
+# is defined in entrypgdir.c.
+movl	$(RELOC(entry_pgdir)), %eax
+movl	%eax, %cr3
+# Turn on paging.
+movl	%cr0, %eax
+orl	$(CR0_PE|CR0_PG|CR0_WP), %eax
+movl	%eax, %cr0
+
+# Now paging is enabled, but we're still running at a low EIP
+# (why is this okay?).  Jump up above KERNBASE before entering
+# C code.
+mov	$relocated, %eax
+jmp	*%eax
+```
+
+`entrypgdir` 将高地址的 `[KERNBASE, KERNBASE + 4MB)` 和低地址的 `[0, 4MB)` 都映射到物理地址 `[0, 4MB)`. 因此在这个极段的过渡期内可以同时使用高地址的 eip 和低地址的 eip
+
+
+
+## 其它
+
+- UVPT的作用?
+
+  见 https://pdos.csail.mit.edu/6.828/2018/lec/l-josmem.html.
 
 
 

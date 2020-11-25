@@ -145,7 +145,10 @@ mem_init(void)
 	// a virtual page table at virtual address UVPT.
 	// (For now, you don't have understand the greater purpose of the
 	// following line.)
-
+	// explanation: https://pdos.csail.mit.edu/6.828/2018/lec/l-josmem.html
+	// UVPT = 0xef400000, PDX(UVPT) = 0x3bd, PTX(UVPT) = 0
+	// [UVPT, ULIM)这块区域等于4MB, 每个虚拟页的PDX都等于0x3bd, PTX从0依次递增到0x3ff. 按照翻译地址的过程, 可以发现这个区域的每个页正好映射到每一个page table.
+	// [UVPT, ULIM)这块区域相当于是一个虚拟的完整的一级页表, 可以通过这个虚拟页表翻译地址. 前 20 bit 是 VPN.
 	// Permissions: kernel R, user R
 	kern_pgdir[PDX(UVPT)] = PADDR(kern_pgdir) | PTE_U | PTE_P;
 
