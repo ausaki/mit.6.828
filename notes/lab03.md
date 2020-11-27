@@ -63,6 +63,18 @@ Program Headers:
 
 页故障(page fault)的中断号是 14, 出现页故障时 CPU 会将出错的虚拟地址保存到 `%cr2` 寄存器, 错误码包含更多出错信息, 具体查看[参考资料](./reference.md).
 
-## 
+## E06
+
+challenge 部分要求实现类似 GDB 的 single step 和 continue 功能, 关键是 flag 寄存器的 `TF` bit, `TF` 用于实现 single step. 具体查看[参考资料](./reference.md)的[INTEL 80386 PROGRAMMER'S REFERENCE MANUAL 1986]()的第12章.
+
+## E07
+
+按照要求实现.
+
+challenge
+
+## E08
+
+
 
 

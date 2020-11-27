@@ -65,6 +65,45 @@ Identifier   Description
 
 ![](assets/interrupt-vectoring.png)
 
-## 
+## 其它
+
+### 一些摘录
 
 
+####  xv6 - 第 3 章
+
+**1**
+
+The x86 has 4 protection levels, numbered 0 (most privilege) to 3 (least privilege). In practice, most operating systems use only 2 levels: 0 and 3, which are then called kernel mode and user mode, respectively. The current privilege level with which the x86 executes instructions is stored in %cs register, in the field CPL.
+
+
+**2**
+
+To make a system call on the x86, a program invokes the int n instruction, where n specifies the index into the IDT. The int instruction performs the following steps:
+
+- Fetch the n’th descriptor from the IDT, where n is the argument of int.
+
+- Check that CPL in %cs is <= DPL, where DPL is the privilege level in the descriptor.
+
+- Save %esp and %ss in CPU-internal registers, but only if the target segment selector’s PL < CPL.
+
+- Load %ss and %esp from a task segment descriptor.
+
+- Push %ss.
+
+- Push %esp.
+
+- Push %eflags.
+
+- Push %cs.
+
+- Push %eip.
+
+- Clear the IF bit in %eflags, but only on an interrupt.
+
+- Set %cs and %eip to the values in the descriptor.
+
+
+**3**
+
+For a user program to execute int, the IDT entry’s DPL must be 3. If the user program doesn’t have the appropriate privilege, then int will result in int 13, which is a gener- al protection fault.

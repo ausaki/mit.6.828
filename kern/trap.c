@@ -86,6 +86,7 @@ extern void IDT_FPERR();
 extern void IDT_ALIGN();
 extern void IDT_MCHK();
 extern void IDT_SIMDERR();
+extern void IDT_SYSCALL();
 
 void
 trap_init(void)
@@ -114,8 +115,9 @@ trap_init(void)
 	SETGATE(idt[T_ALIGN], 0, GD_KT, IDT_ALIGN, 0);
 	SETGATE(idt[T_MCHK], 0, GD_KT, IDT_MCHK, 0);
 	SETGATE(idt[T_SIMDERR], 0, GD_KT, IDT_SIMDERR, 0);
+	SETGATE(idt[T_SYSCALL], 1, GD_KT, IDT_SYSCALL, 3);
 
-	// Per-CPU setup 
+	// Per-CPU setup 	
 	trap_init_percpu();
 }
 
@@ -193,15 +195,23 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
+	int32_t ret = 0;
 	switch (tf->tf_trapno) {
 	case T_PGFLT:
 		page_fault_handler(tf);
 		return;
-		break;
 	case T_BRKPT:
 		monitor(tf);
 		return;
-		break;
+	case T_DEBUG:
+		debugger(tf);
+		return;
+	case T_SYSCALL:
+		ret = syscall(tf->tf_regs.reg_eax, tf->tf_regs.reg_edx, 
+						tf->tf_regs.reg_ecx, tf->tf_regs.reg_ebx, 
+						tf->tf_regs.reg_edi, tf->tf_regs.reg_esi);
+		tf->tf_regs.reg_eax = ret;
+		return;
 	default:
 		break;
 	}
@@ -265,9 +275,9 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
-	// if(!(tf->tf_err & 4)){
-	// 	;
-	// }
+	if(tf->tf_cs == GD_KT){
+		panic("page_fault_handler: page fault in kernel mode");
+	}
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.
