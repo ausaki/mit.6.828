@@ -58,6 +58,34 @@ static const char *trapname(int trapno)
 	return "(unknown trap)";
 }
 
+/* 
+ * You shouldn't call a TRAPHANDLER function from C, but you may
+ * need to _declare_ one in C (for instance, to get a function pointer
+ * during IDT setup).  You can declare the function with
+ *   void NAME();
+ * where NAME is the argument passed to TRAPHANDLER.
+ * 
+ */
+
+// declare interupt handlers
+extern void IDT_DIVIDE();
+extern void IDT_DEBUG();
+extern void IDT_NMI();
+extern void IDT_BRKPT();
+extern void IDT_OFLOW();
+extern void IDT_BOUND();
+extern void IDT_ILLOP();
+extern void IDT_DEVICE();
+extern void IDT_DBLFLT();
+extern void IDT_TSS();
+extern void IDT_SEGNP();
+extern void IDT_STACK();
+extern void IDT_GPFLT();
+extern void IDT_PGFLT();
+extern void IDT_FPERR();
+extern void IDT_ALIGN();
+extern void IDT_MCHK();
+extern void IDT_SIMDERR();
 
 void
 trap_init(void)
@@ -65,6 +93,27 @@ trap_init(void)
 	extern struct Segdesc gdt[];
 
 	// LAB 3: Your code here.
+	for (int i = 0; i < 32; i++) {
+			SETGATE(idt[i], 0, GD_KT, 0, 0);
+	}
+	SETGATE(idt[T_DIVIDE], 0, GD_KT, IDT_DIVIDE, 0);
+	SETGATE(idt[T_DEBUG], 1, GD_KT, IDT_DEBUG, 0);
+	SETGATE(idt[T_NMI], 0, GD_KT, IDT_NMI, 0);
+	SETGATE(idt[T_BRKPT], 1, GD_KT, IDT_BRKPT, 3);
+	SETGATE(idt[T_OFLOW], 1, GD_KT, IDT_OFLOW, 0);
+	SETGATE(idt[T_BOUND], 0, GD_KT, IDT_BOUND, 0);
+	SETGATE(idt[T_ILLOP], 0, GD_KT, IDT_ILLOP, 0);
+	SETGATE(idt[T_DEVICE], 0, GD_KT, IDT_DEVICE, 0);
+	SETGATE(idt[T_DBLFLT], 0, GD_KT, IDT_DBLFLT, 0);
+	SETGATE(idt[T_TSS], 0, GD_KT, IDT_TSS, 0);
+	SETGATE(idt[T_SEGNP], 0, GD_KT, IDT_SEGNP, 0);
+	SETGATE(idt[T_STACK], 0, GD_KT, IDT_STACK, 0);
+	SETGATE(idt[T_GPFLT], 0, GD_KT, IDT_GPFLT, 0);
+	SETGATE(idt[T_PGFLT], 0, GD_KT, IDT_PGFLT, 0);
+	SETGATE(idt[T_FPERR], 0, GD_KT, IDT_FPERR, 0);
+	SETGATE(idt[T_ALIGN], 0, GD_KT, IDT_ALIGN, 0);
+	SETGATE(idt[T_MCHK], 0, GD_KT, IDT_MCHK, 0);
+	SETGATE(idt[T_SIMDERR], 0, GD_KT, IDT_SIMDERR, 0);
 
 	// Per-CPU setup 
 	trap_init_percpu();
@@ -144,7 +193,18 @@ trap_dispatch(struct Trapframe *tf)
 {
 	// Handle processor exceptions.
 	// LAB 3: Your code here.
-
+	switch (tf->tf_trapno) {
+	case T_PGFLT:
+		page_fault_handler(tf);
+		return;
+		break;
+	case T_BRKPT:
+		monitor(tf);
+		return;
+		break;
+	default:
+		break;
+	}
 	// Unexpected trap: The user process or the kernel has a bug.
 	print_trapframe(tf);
 	if (tf->tf_cs == GD_KT)
@@ -205,6 +265,9 @@ page_fault_handler(struct Trapframe *tf)
 	// Handle kernel-mode page faults.
 
 	// LAB 3: Your code here.
+	// if(!(tf->tf_err & 4)){
+	// 	;
+	// }
 
 	// We've already handled kernel-mode exceptions, so if we get here,
 	// the page fault happened in user mode.

@@ -10,3 +10,9 @@
 
 - [关于 pmap.c 中出现的`UVPT`的解释](https://pdos.csail.mit.edu/6.828/2018/lec/l-josmem.html)
 
+- [INTEL 80386 PROGRAMMER'S REFERENCE MANUAL 1986](https://pdos.csail.mit.edu/6.828/2018/readings/i386.pdf)
+  
+- [Inline Assembly](http://www.delorie.com/djgpp/doc/brennan/brennan_att_inline_djgpp.html)
+
+- [Inline Assembly](http://www.ibiblio.org/gferg/ldp/GCC-Inline-Assembly-HOWTO.html)
+
