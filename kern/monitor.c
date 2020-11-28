@@ -25,6 +25,8 @@ struct Command {
 static struct Command commands[] = {
 	{ "help", "Display this list of commands", mon_help },
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
+	{ "backtrace", "Display stack backtrace", mon_backtrace},
+	{ "debug", "start debugger", mon_debugger},
 };
 
 /***** Implementations of basic kernel monitor commands *****/
@@ -58,11 +60,34 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf)
 int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 {
-	// Your code here.
+	uint32_t *ebp = (uint32_t *)read_ebp();
+	struct Eipdebuginfo info;
+	cprintf("Stack backtrace:\n");
+	while(ebp){
+		cprintf("  ebp %08x  eip %08x  args %08x %08x %08x %08x %08x\n", 
+				ebp,
+				ebp[1],
+				ebp[2],
+				ebp[3],
+				ebp[4],
+				ebp[5],
+				ebp[6]);
+		debuginfo_eip(ebp[1], &info);
+		cprintf("         %s:%d: %.*s+%d\n", 
+				info.eip_file,
+				info.eip_line,
+				info.eip_fn_namelen,
+				info.eip_fn_name,
+				ebp[1] - info.eip_fn_addr);
+		ebp = (uint32_t *)ebp[0];
+	}
 	return 0;
 }
 
-
+int mon_debugger(int argc, char **argv, struct Trapframe *tf){
+	debugger(tf);
+	return -1;
+}
 
 /***** Kernel monitor command interpreter *****/
 
@@ -123,6 +148,100 @@ monitor(struct Trapframe *tf)
 		buf = readline("K> ");
 		if (buf != NULL)
 			if (runcmd(buf, tf) < 0)
+				break;
+	}
+}
+
+/***** Debugger *****/
+
+static struct Command debugger_commands[] = {
+	{ "help", "Display this list of commands", debug_help },
+	{ "s", "single step", debug_si},
+	{ "c", "continue exec", debug_continue},
+	{ "q", "quit debugger", debug_quit},
+};
+
+int
+debug_help(int argc, char **argv, struct Trapframe *tf)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(debugger_commands); i++)
+		cprintf("%s - %s\n", debugger_commands[i].name, debugger_commands[i].desc);
+	return 0;
+}
+
+int debug_quit(int argc, char **argv, struct Trapframe *tf){
+	return debug_continue(argc, argv, tf);
+}
+
+int debug_si(int argc, char **argv, struct Trapframe *tf){
+	if(tf && (tf->tf_trapno == T_BRKPT || tf->tf_trapno == T_DEBUG)){
+		tf->tf_eflags |= FL_TF;
+		return -1;
+	}
+	cprintf("Error: invalid call.\n");
+	return 0;
+}
+
+int debug_continue(int argc, char **argv, struct Trapframe *tf){
+	if(tf && (tf->tf_trapno == T_BRKPT || tf->tf_trapno == T_DEBUG)){
+		tf->tf_eflags &= ~FL_TF;
+		return -1;
+	}
+	cprintf("Error: invalid call.\n");
+	return 0;
+}
+
+static int
+debug_runcmd(char *buf, struct Trapframe *tf)
+{
+	int argc;
+	char *argv[MAXARGS];
+	int i;
+
+	// Parse the command buffer into whitespace-separated arguments
+	argc = 0;
+	argv[argc] = 0;
+	while (1) {
+		// gobble whitespace
+		while (*buf && strchr(WHITESPACE, *buf))
+			*buf++ = 0;
+		if (*buf == 0)
+			break;
+
+		// save and scan past next arg
+		if (argc == MAXARGS-1) {
+			cprintf("Too many arguments (max %d)\n", MAXARGS);
+			return 0;
+		}
+		argv[argc++] = buf;
+		while (*buf && !strchr(WHITESPACE, *buf))
+			buf++;
+	}
+	argv[argc] = 0;
+
+	// Lookup and invoke the command
+	if (argc == 0)
+		return 0;
+	for (i = 0; i < ARRAY_SIZE(debugger_commands); i++) {
+		if (strcmp(argv[0], debugger_commands[i].name) == 0)
+			return debugger_commands[i].func(argc, argv, tf);
+	}
+	cprintf("Unknown command '%s'\n", argv[0]);
+	return 0;
+}
+
+void debugger(struct Trapframe *tf){
+	char *buf;
+	if (tf == NULL)
+		panic("debugger: tf is NULL");
+	
+	cprintf("=> %08x: \n", tf->tf_eip);
+	while (1) {
+		buf = readline("D> ");
+		if (buf != NULL)
+			if (debug_runcmd(buf, tf) < 0)
 				break;
 	}
 }
