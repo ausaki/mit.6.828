@@ -75,6 +75,146 @@ challenge
 
 ## E08
 
+按照要求实现.
+
+## E09
+
+主要是 `user_mem_check`, 注意边界情况.
+
+原文中说:
+
+> Finally, change debuginfo_eip in kern/kdebug.c to call user_mem_check on usd, stabs, and stabstr. If you now run user/breakpoint, you should be able to run backtrace from the kernel monitor and see the backtrace traverse into lib/libmain.c before the kernel panics with a page fault. What causes this page fault? You don't need to fix it, but you should understand why it happens. 
+
+但实际上我测试的结果和上面说的不一样. 结果如下:
+
+```
+Incoming TRAP frame at 0xefffffbc   ----> libmain 中调用 `sys_getenvid` 产生的系统调用中断.
+Incoming TRAP frame at 0xefffffbc   ----> breakpoint 中的 `int 3` 中断
+Welcome to the JOS kernel monitor!
+Type 'help' for a list of commands.
+TRAP frame at 0xf01c6000
+  edi  0x00000000
+  esi  0x00000000
+  ebp  0xeebfdff0
+  oesp 0xefffffdc
+  ebx  0x00802000
+  edx  0x00001000
+  ecx  0x00000000
+  eax  0x00001000
+  es   0x----0023
+  ds   0x----0023
+  trap 0x00000003 Breakpoint
+  err  0x00000000
+  eip  0x00800034
+  cs   0x----001b
+  flag 0x00000082
+  esp  0xeebfdfc4
+  ss   0x----0023
+K> backtrace
+Stack backtrace:
+  ebp efffff00  eip f0100b9d  args 00000001 efffff28 f01c6000 f0106bbd f0106975
+         kern/monitor.c:152: monitor+353
+  ebp efffff80  eip f010457c  args f01c6000 efffffbc f014b508 00000092 f011bfd8
+         kern/trap.c:205: trap+166
+  ebp efffffb0  eip f01046d3  args efffffbc 00000000 00000000 eebfdff0 efffffdc
+         kern/syscall.c:69: syscall+0
+Incoming TRAP frame at 0xeffffe7c
+kernel panic at kern/trap.c:279: page_fault_handler: page fault in kernel mode, va: eebfe008
+Welcome to the JOS kernel monitor!
+Type 'help' for a list of commands.
+K>
+```
+可以看到, backtrace 的结果并没有出现 libmain. 根本原因是 GCC 的编译优化.
+
+backtrace 的原理是利用 %ebp 回溯调用栈. 下面是回溯过程:
+
+- 当输入 backtrace 命令时, 当前处于 mon_backtrace 函数. 根据 %eip 知道上一级是 monitor.
+
+  ```
+  ebp efffff00  eip f0100b9d  args 00000001 efffff28 f01c6000 f0106bbd f0106975
+         kern/monitor.c:152: monitor+353
+  ```
+
+- `mov (%ebp), %ebp`. 此时处于 monitor 函数. 根据 %eip 知道上一级是 trap 函数.
+
+  ```
+  ebp efffff80  eip f010457c  args f01c6000 efffffbc f014b508 00000092 f011bfd8
+         kern/trap.c:205: trap+166
+  ```
+
+- `mov (%ebp), %ebp`. 此时处于 trap 函数. %eip 的情况比较特殊, 因为 trap 的上一级调用者是 trapentry.S 的 _alltraps, _alltraps 并不是 C 函数, 所以这里根据 %eip 推测出的上一级是 syscall.
+
+  ```
+  ebp efffffb0  eip f01046d3  args efffffbc 00000000 00000000 eebfdff0 efffffdc
+         kern/syscall.c:69: syscall+0
+  ```
+
+  kernel.asm 的部分代码如下:
+
+  ```
+  f01046c2 <_alltraps>:
+    ...
+    call trap
+  f01046ce:	e8 03 fe ff ff       	call   f01044d6 <trap>
+
+  f01046d3 <syscall>:
+  }
+
+  // Dispatches to the correct kernel function, passing the arguments.
+  int32_t
+  syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
+  {
+  f01046d3:	55                   	push   %ebp
+  f01046d4:	89 e5                	mov    %esp,%ebp
+  ...
+  ```
+
+- `mov (%ebp), %ebp`. 此时处于 libmain 函数. 为什么不是处于 breakpoint 的 umain 函数呢? 毕竟是 umain 函数触发的中断. breakpint 的代码非常简单:
+
+  ```
+  void
+  umain(int argc, char **argv)
+  {
+    asm volatile("int $3");
+  }
+  ```
+  反汇编代码如下:
+
+  ```
+  void
+  umain(int argc, char **argv)
+  {
+    asm volatile("int $3");
+    800033:	cc                   	int3   
+  }
+    800034:	c3                   	ret    
+  ```
+
+  从反汇编代码可以看出, umain 并没有普通 C 函数的 `push %ebp`, `mov %esp, %ebp`, 所以 %ebp 仍然指向 liabmain 的栈.
+
+
+综上, 知道了为什么 backtrace 的结果中没有出现 libmain, 如果想要使其出现 libmain , 可以在 breakpoint 的代码中添加一点 C 代码, 例如:
+
+```
+void
+umain(int argc, char **argv)
+{
+	cprintf("argc: %d\n", argv);
+	asm volatile("int $3");
+}
+```
+
+那么为什么会出现 page fault 呢?
+
+从 breakping 的 trapframe 可以知道, libmain 的 %ebp 等于 0xeebfdff0, 当然也可以通过修改 mon_backtrace 的代码打印出 %ebp 的值或通过 GDB 查看此时 %ebp 的值. 
+
+我们知道 libmain 是用户环境(umain)的启动代码, 它的栈是非常接近 USTACKTOP(0xeebfe000) 的. libmain 的 %ebp 距离 USTACKTOP 只有 16 字节, mon_backtrace 中打印 5 个参数的代码越界了, 访问了不存在的页, 导致page fault.
+
+解决 page fault 的方法: 在 _alltraps 将 %ebp 设置为 0.
+
+
+## E10
+
 
 
 

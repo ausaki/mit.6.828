@@ -16,3 +16,5 @@
 
 - [Inline Assembly](http://www.ibiblio.org/gferg/ldp/GCC-Inline-Assembly-HOWTO.html)
 
+- [x86 idt](https://pdos.csail.mit.edu/6.828/2018/lec/x86_idt.pdf)
+
