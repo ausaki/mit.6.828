@@ -281,6 +281,10 @@ mem_init_mp(void)
 	//     Permissions: kernel RW, user NONE
 	//
 	// LAB 4: Your code here:
+	for(int i = 0; i < NCPU; i++){
+		boot_map_region(kern_pgdir, KSTACKTOP - i * (KSTKSIZE + KSTKGAP) - KSTKSIZE, 
+						KSTKSIZE, PADDR(percpu_kstacks[i]), PTE_W);
+	}
 
 }
 
@@ -299,10 +303,6 @@ mem_init_mp(void)
 void
 page_init(void)
 {
-	// LAB 4:
-	// Change your code to mark the physical page at MPENTRY_PADDR
-	// as in use
-
 	// The example code here marks all physical pages as free.
 	// However this is not truly the case.  What memory is free?
 	//  1) Mark physical page 0 as in use.
@@ -328,6 +328,13 @@ page_init(void)
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
 	}
+
+	// LAB 4:
+	// Change your code to mark the physical page at MPENTRY_PADDR
+	// as in use
+	pa2page(MPENTRY_PADDR + PGSIZE)->pp_link = pa2page(MPENTRY_PADDR - PGSIZE);
+	pa2page(MPENTRY_PADDR)->pp_link = NULL;
+
 	// [IOPHYSMEM, EXTPHYSMEM) is in use, // [640K, 1024K]
 	// [EXTPHYSMEM, end) is in use // [1024K, kernel's bss end]
 	// [end, nextfree) is in use
@@ -455,7 +462,6 @@ static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
 	// Fill this function in
-	size_t sz = 0;
 	for(size_t i = 0; i < size; i += PGSIZE){
 		pte_t *pte = pgdir_walk(pgdir, (void *)(va + i), 1);
 		if(pte == NULL){
@@ -609,7 +615,25 @@ mmio_map_region(physaddr_t pa, size_t size)
 	// Hint: The staff solution uses boot_map_region.
 	//
 	// Your code here:
-	panic("mmio_map_region not implemented");
+	int perm = PTE_PCD | PTE_PWT | PTE_W | PTE_P;
+	uintptr_t va = base;
+	pte_t *pte;
+	physaddr_t pa_end = ROUNDUP(pa + size, PGSIZE);
+	pa = ROUNDDOWN(pa, PGSIZE);
+	if(va + pa_end - pa > MMIOLIM){
+		panic("mmio_map_region: memory overflow. va: %08x, pa: %08x", va, pa);
+	}
+	for(;pa < pa_end; pa += PGSIZE, va += PGSIZE){
+		pte = pgdir_walk(kern_pgdir, (void *)va, 1);
+		if(pte == NULL){
+			panic("mmio_map_region: memory overflow. va: %08x, pa: %08x", va, pa);
+		}
+		*pte = PTE_ADDR(pa) | perm;
+	}
+	// boot_map_region(kern_pgdir, va, pa_end - pa, pa, perm);
+	uintptr_t res = base;
+	base = va;
+	return (void *)res;
 }
 
 static uintptr_t user_mem_check_addr;
