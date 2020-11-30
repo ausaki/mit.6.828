@@ -60,3 +60,52 @@ env->env_pgdir 是从 kern_pgdir 复制过来的, KERNBASE 以上的虚拟内存
   // The trapframe on the stack should be ignored from here on.
   tf = &curenv->env_tf;
 ```
+
+## E07
+
+...
+
+
+## E08
+
+...
+
+## E09
+
+仔细按照 `UTrapframe` 的结构来设置栈.
+
+以下代码实现跳转到用户页故障处理代码.
+
+```
+tf->tf_esp = uxesp;
+tf->tf_eip = (uintptr_t)curenv->env_pgfault_upcall;
+```
+
+## E10
+
+这个练习需要写汇编代码, 而且需要特别理解汇编的一些技巧.
+
+pfentry.S 的注释已经提到一些需要注意的点, 下面是一些总结:
+
+- 不能使用 `jmp` 指令跳转到发生页故障的用户代码, 应为 `jmp` 需要使用一个通用寄存器来保存跳转地址, 而这可能会破环通用寄存器的数据一致性.
+
+- `popal` 指令用于从当前 %esp 取出通用寄存器并覆盖原有的值.
+
+- `popfl` 指令用于从当前 %esp 取出 eflags 并覆盖原有的值.
+
+- `pfentry.S` 的注释中实现跳转的解决方法大致如下:
+
+  - 将 trap time 的 %eip(utf->utf_eip) 保存到 trap time 栈(即发生页故障时的栈).
+
+  - 恢复寄存器.
+  
+  - 此时 %esp 指向 trap time 栈, 此处保存的值正好是 %eip. 然后使用 `ret` 指令恢复 %eip.
+
+  - 如果发生递归的页故障, 即用户处理页故障的代码也发生了页故障, 从而导致递归页故障. 那么需要在用户异常栈预留 4 个字节的空间用于保存 %eip.
+
+## E11
+
+...
+
+
+
