@@ -6,7 +6,7 @@
 
 实现 `page_init` 代码之前需要理解 kernel 在启动阶段的物理内存布局，根据 `page_init` 函数中的提示：
 
-```
+```c
 //  1) Mark physical page 0 as in use.
 	//     This way we preserve the real-mode IDT and BIOS structures
 	//     in case we ever need them.  (Currently we don't, but...)
@@ -40,8 +40,8 @@
 
 发现了`pgdir_walk`函数的注释中的一个小错误: 
 
-```
-/ The relevant page table page might not exist yet.
+```c
+// The relevant page table page might not exist yet.
 // If this is true, and create == false, then pgdir_walk returns NULL.
 // Otherwise, pgdir_walk allocates a new page table page with page_alloc.
 //    - If the allocation fails, pgdir_walk returns NULL.
@@ -54,7 +54,7 @@
 
 其实, 无论page table是否已经存在, 都应该返回指向对应 PTE 的指针. 一开始我按照原来的注释返回指向 new page table 的指针, 导致`check_page`的测试出错. 出错的代码如下:
 
-```
+```c
   // check pointer arithmetic in pgdir_walk
   page_free(pp0);
   va = (void*)(PGSIZE * NPDENTRIES + PGSIZE);
@@ -115,7 +115,7 @@
 
 开启分页机制:
 
-```
+```asm
 # Load the physical address of entry_pgdir into cr3.  entry_pgdir
 # is defined in entrypgdir.c.
 movl	$(RELOC(entry_pgdir)), %eax

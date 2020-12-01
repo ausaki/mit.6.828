@@ -12,7 +12,7 @@
 
 下面是 `obj/user/hello` 的 program headers 内容:
 
-```
+``` c
 Program Headers:
   Type           Offset   VirtAddr   PhysAddr   FileSiz MemSiz  Flg Align
   LOAD           0x001000 0x00200000 0x00200000 0x03225 0x03225 RW  0x1000
@@ -87,7 +87,7 @@ challenge
 
 但实际上我测试的结果和上面说的不一样. 结果如下:
 
-```
+``` console
 Incoming TRAP frame at 0xefffffbc   ----> libmain 中调用 `sys_getenvid` 产生的系统调用中断.
 Incoming TRAP frame at 0xefffffbc   ----> breakpoint 中的 `int 3` 中断
 Welcome to the JOS kernel monitor!
@@ -130,28 +130,28 @@ backtrace 的原理是利用 %ebp 回溯调用栈. 下面是回溯过程:
 
 - 当输入 backtrace 命令时, 当前处于 mon_backtrace 函数. 根据 %eip 知道上一级是 monitor.
 
-  ```
+  ``` console
   ebp efffff00  eip f0100b9d  args 00000001 efffff28 f01c6000 f0106bbd f0106975
          kern/monitor.c:152: monitor+353
   ```
 
 - `mov (%ebp), %ebp`. 此时处于 monitor 函数. 根据 %eip 知道上一级是 trap 函数.
 
-  ```
+  ``` console
   ebp efffff80  eip f010457c  args f01c6000 efffffbc f014b508 00000092 f011bfd8
          kern/trap.c:205: trap+166
   ```
 
 - `mov (%ebp), %ebp`. 此时处于 trap 函数. %eip 的情况比较特殊, 因为 trap 的上一级调用者是 trapentry.S 的 _alltraps, _alltraps 并不是 C 函数, 所以这里根据 %eip 推测出的上一级是 syscall.
 
-  ```
+  ``` console
   ebp efffffb0  eip f01046d3  args efffffbc 00000000 00000000 eebfdff0 efffffdc
          kern/syscall.c:69: syscall+0
   ```
 
   kernel.asm 的部分代码如下:
 
-  ```
+  ``` asm
   f01046c2 <_alltraps>:
     ...
     call trap
@@ -171,7 +171,7 @@ backtrace 的原理是利用 %ebp 回溯调用栈. 下面是回溯过程:
 
 - `mov (%ebp), %ebp`. 此时处于 libmain 函数. 为什么不是处于 breakpoint 的 umain 函数呢? 毕竟是 umain 函数触发的中断. breakpint 的代码非常简单:
 
-  ```
+  ```c
   void
   umain(int argc, char **argv)
   {
@@ -180,7 +180,7 @@ backtrace 的原理是利用 %ebp 回溯调用栈. 下面是回溯过程:
   ```
   反汇编代码如下:
 
-  ```
+  ```asm
   void
   umain(int argc, char **argv)
   {
@@ -195,7 +195,7 @@ backtrace 的原理是利用 %ebp 回溯调用栈. 下面是回溯过程:
 
 综上, 知道了为什么 backtrace 的结果中没有出现 libmain, 如果想要使其出现 libmain , 可以在 breakpoint 的代码中添加一点 C 代码, 例如:
 
-```
+```c
 void
 umain(int argc, char **argv)
 {

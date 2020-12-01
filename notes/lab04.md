@@ -12,7 +12,7 @@
 
 因为 bootloader 的load adress 和 linker address 是一样的, 由下图可知都是0x7c00.
 
-```
+``` console
 $ readelf -l obj/boot/boot.out 
 
 Program Headers:
@@ -52,7 +52,7 @@ env->env_pgdir 是从 kern_pgdir 复制过来的, KERNBASE 以上的虚拟内存
 
 当用户环境调用系统调用 `sys_yield` 时, 进行上下文切换, 进入内核模式, 内核在 trap() 函数中将 trapframe 保存到 curenv->env_trapframe. 如下:
 
-```
+``` C
   // Copy trap frame (which is currently on the stack)
   // into 'curenv->env_tf', so that running the environment
   // will restart at the trap point.
@@ -76,7 +76,7 @@ env->env_pgdir 是从 kern_pgdir 复制过来的, KERNBASE 以上的虚拟内存
 
 以下代码实现跳转到用户页故障处理代码.
 
-```
+``` C
 tf->tf_esp = uxesp;
 tf->tf_eip = (uintptr_t)curenv->env_pgfault_upcall;
 ```
@@ -117,7 +117,7 @@ pfentry.S 的注释已经提到一些需要注意的点, 下面是一些总结:
 
   一开始我是在子进程中初始化用户异常栈, 然后 user/forktree.c 的运行结果一直报错(page fault). 原来的代码和报错如下:
 
-  ```
+  ```C
   envid_t
   fork(void)
   {
@@ -143,7 +143,7 @@ pfentry.S 的注释已经提到一些需要注意的点, 下面是一些总结:
   ```
 
 
-  ```
+  ``` console
   ...
   [00000000] new env 00001000
   1000: I am ''
@@ -177,7 +177,7 @@ pfentry.S 的注释已经提到一些需要注意的点, 下面是一些总结:
 
   出错原因是因为当子进程开始运行后, 立刻就会往栈上写数据, 导致 COW 页故障, 然而此时子进程还来不及设置页故障处理函数, 因此导致页故障无法被正常处理. 报错位置如下:
 
-  ```
+  ``` C
   // LAB 4: Your code here.
 	if(curenv->env_pgfault_upcall == NULL){
 		// Destroy the environment that caused the fault.
@@ -197,7 +197,7 @@ pfentry.S 的注释已经提到一些需要注意的点, 下面是一些总结:
 
   错误用法:
 
-  ```
+  ```C
   if(uvpt[PGNUM(va)] & some_permissions){
     ...
   }
@@ -205,7 +205,7 @@ pfentry.S 的注释已经提到一些需要注意的点, 下面是一些总结:
 
   正确用法:
 
-  ```
+  ```C
   if(uvpd[PDX(va)] & PTE_P && uvpt[PGNUM(va)] & some_permissions){
     ...
   }
@@ -225,7 +225,7 @@ pfentry.S 的注释已经提到一些需要注意的点, 下面是一些总结:
 
   在 trap_init() 中通过 `SETGATE` 宏设置中断描述符表, 我原来将 T_DEBUG, T_BRKPT, T_OFLOW, T_SYSCALL 的 istrap 参数设置为 1, 导致出错:
 
-  ```
+  ```console
   kernel panic on CPU 0 at kern/trap.c:306: assertion failed: !(read_eflags() & FL_IF)
   ```
 
@@ -239,7 +239,7 @@ lab 文档说完成 E14 后, `make grade` 的分数应该是 65/80, 然后此时
 
   原因是 pfentry.S 中的 bug.
 
-  ```
+  ```asm
   ...
   // Restore eflags from the stack.  After you do this, you can
 	// no longer use arithmetic operations or anything else that
@@ -263,7 +263,7 @@ lab 文档说完成 E14 后, `make grade` 的分数应该是 65/80, 然后此时
 
   修改一下 user_mem_assert 就可以了.
 
-  ```
+  ```diff
   $ git diff kern/trap.c
 
   +       uint32_t sz = sizeof(struct UTrapframe);
@@ -371,7 +371,7 @@ lab 文档说完成 E14 后, `make grade` 的分数应该是 65/80, 然后此时
 
     具体的错误就是系统调用 sys_ipc_recv() 的返回值(保存在 %eax)等于 12, 12 就是 sys_ipc_recv() 的系统调用的编号.
 
-    ```
+    ``` console
     $ make run-primes-nox
     ...
     [00000000] new env 00001000
