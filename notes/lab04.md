@@ -107,5 +107,191 @@ pfentry.S 的注释已经提到一些需要注意的点, 下面是一些总结:
 
 ...
 
+## E12
+
+仔细阅读 lab 文档和注释, 注意页表权限.
+
+遇到的问题:
+
+- fork()
+
+  一开始我是在子进程中初始化用户异常栈, 然后 user/forktree.c 的运行结果一直报错(page fault). 原来的代码和报错如下:
+
+  ```
+  envid_t
+  fork(void)
+  {
+    // LAB 4: Your code here.
+    envid_t envid;
+    int err;
+
+    set_pgfault_handler(pgfault);
+
+    envid = sys_exofork();
+    if(envid < 0){
+      panic("fork: %e", envid);
+    }
+    if(envid == 0){
+      // child
+      thisenv = &envs[ENVX(sys_getenvid())];
+      // 设置用户异常栈和页故障处理函数.
+      set_pgfault_handler(pgfault); 
+      return 0;
+    }
+    ...
+  }
+  ```
+
+
+  ```
+  ...
+  [00000000] new env 00001000
+  1000: I am ''
+  [00001000] new env 00001001
+  [00001000] new env 00001002
+  [00001000] exiting gracefully
+  [00001000] free env 00001000
+  [00001001] user fault va eebfdf48 ip 00800ee4
+  TRAP frame at 0xf029c07c from CPU 0
+    edi  0x00000000
+    esi  0x00000000
+    ebp  0xeebfdf70
+    oesp 0xefffffdc
+    ebx  0x00000000
+    edx  0x00000000
+    ecx  0x008010a9
+    eax  0x00000000
+    es   0x----0023
+    ds   0x----0023
+    trap 0x0000000e Page Fault
+    cr2  0xeebfdf48
+    err  0x00000007 [user, write, protection]
+    eip  0x00800ee4
+    cs   0x----001b
+    flag 0x00000092
+    esp  0xeebfdf4c
+    ss   0x----0023
+  [00001001] free env 00001001
+  ...
+  ```
+
+  出错原因是因为当子进程开始运行后, 立刻就会往栈上写数据, 导致 COW 页故障, 然而此时子进程还来不及设置页故障处理函数, 因此导致页故障无法被正常处理. 报错位置如下:
+
+  ```
+  // LAB 4: Your code here.
+	if(curenv->env_pgfault_upcall == NULL){
+		// Destroy the environment that caused the fault.
+		cprintf("[%08x] user fault va %08x ip %08x\n",
+			curenv->env_id, fault_va, tf->tf_eip);
+		print_trapframe(tf);
+		env_destroy(curenv);
+		return;
+	}
+  ```
+
+  解决办法就是在父进程先设置好子进程的用户异常栈和页故障处理函数.
+
+- uvpd 和 uvpt
+
+  一开始只单独使用 uvpt 查询虚拟地址的页表项. 这其实是不安全的, 应该先使用 uvpd 判断二级页表是否存在.
+
+  错误用法:
+
+  ```
+  if(uvpt[PGNUM(va)] & some_permissions){
+    ...
+  }
+  ```
+
+  正确用法:
+
+  ```
+  if(uvpd[PDX(va)] & PTE_P && uvpt[PGNUM(va)] & some_permissions){
+    ...
+  }
+  ```
+
+
+## E13
+
+按照要求实现就好.
+
+
+遇到的问题:
+
+- 运行`make run-spin-nox` 失败.
+
+  原因是 trap_init() 设置中断描述符表的 一个bug.
+
+  在 trap_init() 中通过 `SETGATE` 宏设置中断描述符表, 我原来将 T_DEBUG, T_BRKPT, T_OFLOW, T_SYSCALL 的 istrap 参数设置为 1, 导致出错:
+
+  ```
+  kernel panic on CPU 0 at kern/trap.c:306: assertion failed: !(read_eflags() & FL_IF)
+  ```
+
+  其实所有的中断的 istrap 参数都为 0. 这样 CPU 在切换到内核模式时才会清除 eflags 的 FL_IF 标志位.
+
+## E14
+
+lab 文档说完成 E14 后, `make grade` 的分数应该是 65/80, 然后此时我的分数只有 45/80, 通过检查发现下面的问题:
+
+- `faultregs` 测试失败.
+
+  原因是 pfentry.S 中的 bug.
+
+  ```
+  ...
+  // Restore eflags from the stack.  After you do this, you can
+	// no longer use arithmetic operations or anything else that
+	// modifies eflags.
+	// LAB 4: Your code here.
+	addl $4, %esp
+	popfl
+
+	// Switch back to the adjusted trap-time stack.
+	// LAB 4: Your code here.
+	popl %esp
+  subl $4, %esp // 错误操作
+  ...
+  ```
+
+  上面注释中明确说了在恢复 eflags 后, 不能再进行算术运算, 否则会修改 eflags. 因此 `subl $4, %esp` 是错误的, 应该在一开始就直接修改 utf 的 %esp.
+
+- `faultnostack` 测试失败.
+
+  原因是 trap.c 中的 page_fault_handler() 函数的一个 bug.
+
+  修改一下 user_mem_assert 就可以了.
+
+  ```
+  $ git diff kern/trap.c
+
+  +       uint32_t sz = sizeof(struct UTrapframe);
+ 
+  -       user_mem_assert(curenv, (void *)uxstackbottom, PGSIZE, PTE_U | PTE_W | PTE_P);
+  -       
+          if(tf->tf_esp >= uxstackbottom && tf->tf_esp < UXSTACKTOP){
+                  // recursive page fault
+  -               uxesp = tf->tf_esp - sizeof(uintptr_t);
+  +               uxesp = tf->tf_esp;
+  +               sz += sizeof(uintptr_t);
+          }
+          // set up exception stack
+  -       uxesp -= sizeof(struct UTrapframe);
+  -       if(uxesp < uxstackbottom) {
+  -               // Destroy the environment that caused the fault.
+  -               cprintf("[%08x] user fault va %08x ip %08x\n"
+  -                               "UXSTACK overflow\n",
+  -                               curenv->env_id, fault_va, tf->tf_eip);
+  -               print_trapframe(tf);
+  -               env_destroy(curenv);
+  -               return;
+  -       }
+  +       uxesp -= sz;
+  +       user_mem_assert(curenv, (void *)uxesp, sz , PTE_U | PTE_W | PTE_P);
+  ```
+
+## E15
+
 
 

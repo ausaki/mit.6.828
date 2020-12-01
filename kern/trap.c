@@ -94,6 +94,12 @@ extern void IDT_ALIGN();
 extern void IDT_MCHK();
 extern void IDT_SIMDERR();
 extern void IDT_SYSCALL();
+extern void IDT_IRQ_TIMER();
+extern void IDT_IRQ_KBD();
+extern void IDT_IRQ_SERIAL();
+extern void IDT_IRQ_SPURIOUS();
+extern void IDT_IRQ_IDE();
+extern void IDT_IRQ_ERROR();
 
 void
 trap_init(void)
@@ -105,10 +111,10 @@ trap_init(void)
 			SETGATE(idt[i], 0, GD_KT, 0, 0);
 	}
 	SETGATE(idt[T_DIVIDE], 0, GD_KT, IDT_DIVIDE, 0);
-	SETGATE(idt[T_DEBUG], 1, GD_KT, IDT_DEBUG, 0);
+	SETGATE(idt[T_DEBUG], 0, GD_KT, IDT_DEBUG, 0);
 	SETGATE(idt[T_NMI], 0, GD_KT, IDT_NMI, 0);
-	SETGATE(idt[T_BRKPT], 1, GD_KT, IDT_BRKPT, 3);
-	SETGATE(idt[T_OFLOW], 1, GD_KT, IDT_OFLOW, 0);
+	SETGATE(idt[T_BRKPT], 0, GD_KT, IDT_BRKPT, 3);
+	SETGATE(idt[T_OFLOW], 0, GD_KT, IDT_OFLOW, 0);
 	SETGATE(idt[T_BOUND], 0, GD_KT, IDT_BOUND, 0);
 	SETGATE(idt[T_ILLOP], 0, GD_KT, IDT_ILLOP, 0);
 	SETGATE(idt[T_DEVICE], 0, GD_KT, IDT_DEVICE, 0);
@@ -122,7 +128,14 @@ trap_init(void)
 	SETGATE(idt[T_ALIGN], 0, GD_KT, IDT_ALIGN, 0);
 	SETGATE(idt[T_MCHK], 0, GD_KT, IDT_MCHK, 0);
 	SETGATE(idt[T_SIMDERR], 0, GD_KT, IDT_SIMDERR, 0);
-	SETGATE(idt[T_SYSCALL], 1, GD_KT, IDT_SYSCALL, 3);
+	SETGATE(idt[T_SYSCALL], 0, GD_KT, IDT_SYSCALL, 3);
+	
+	SETGATE(idt[IRQ_OFFSET + IRQ_TIMER], 0, GD_KT, IDT_IRQ_TIMER, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_KBD], 0, GD_KT, IDT_IRQ_KBD, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_SERIAL], 0, GD_KT, IDT_IRQ_SERIAL, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_SPURIOUS], 0, GD_KT, IDT_IRQ_SPURIOUS, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_IDE], 0, GD_KT, IDT_IRQ_IDE, 0);
+	SETGATE(idt[IRQ_OFFSET + IRQ_ERROR], 0, GD_KT, IDT_IRQ_ERROR, 0);
 
 	// Per-CPU setup 	
 	trap_init_percpu();
@@ -258,6 +271,10 @@ trap_dispatch(struct Trapframe *tf)
 						tf->tf_regs.reg_edi, tf->tf_regs.reg_esi);
 		tf->tf_regs.reg_eax = ret;
 		return;
+	case IRQ_OFFSET + IRQ_TIMER:
+		lapic_eoi();
+		sched_yield();
+		return ;
 	default:
 		break;
 	}
@@ -390,24 +407,17 @@ page_fault_handler(struct Trapframe *tf)
 	uintptr_t uxstackbottom = UXSTACKTOP - PGSIZE;
 	struct UTrapframe *utf;
 	uintptr_t uxesp = UXSTACKTOP;
+	uint32_t sz = sizeof(struct UTrapframe);
 
-	user_mem_assert(curenv, (void *)uxstackbottom, PGSIZE, PTE_U | PTE_W | PTE_P);
-	
 	if(tf->tf_esp >= uxstackbottom && tf->tf_esp < UXSTACKTOP){
 		// recursive page fault
-		uxesp = tf->tf_esp - sizeof(uintptr_t);
+		uxesp = tf->tf_esp;
+		sz += sizeof(uintptr_t);
 	}
 	// set up exception stack
-	uxesp -= sizeof(struct UTrapframe);
-	if(uxesp < uxstackbottom) {
-		// Destroy the environment that caused the fault.
-		cprintf("[%08x] user fault va %08x ip %08x\n"
-				"UXSTACK overflow\n",
-				curenv->env_id, fault_va, tf->tf_eip);
-		print_trapframe(tf);
-		env_destroy(curenv);
-		return;
-	}
+	uxesp -= sz;
+	user_mem_assert(curenv, (void *)uxesp, sz , PTE_U | PTE_W | PTE_P);
+	
 	utf = (struct UTrapframe *)uxesp;
 	utf->utf_fault_va = fault_va;
 	utf->utf_err = tf->tf_err;
