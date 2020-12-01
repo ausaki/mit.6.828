@@ -505,11 +505,11 @@ page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 	if(pte == NULL){
 		return -E_NO_MEM;
 	}
-	if(*pte | PTE_P && PTE_ADDR(*pte) == PTE_ADDR(page2pa(pp))){
-		*pte = PTE_ADDR(*pte) | perm | PTE_P;
-		return 0;
-	}
-	if(*pte | PTE_P){
+	if(*pte & PTE_P){
+		if(PTE_ADDR(*pte) == PTE_ADDR(page2pa(pp))){
+			*pte = PTE_ADDR(*pte) | perm | PTE_P;
+			return 0;
+		}
 		page_remove(pgdir, va);
 	}
 	*pte = PTE_ADDR(page2pa(pp)) | perm | PTE_P;

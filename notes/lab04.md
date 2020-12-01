@@ -293,5 +293,93 @@ lab 文档说完成 E14 后, `make grade` 的分数应该是 65/80, 然后此时
 
 ## E15
 
+按照注释和 lab 文档仔细实现各种要求.
 
+在调试 bug 时反复浏览了几遍代码, 修复了之前代码的几个 bug.
+
+
+- sys_page_alloc() 对 perm 参数的检查存在 bug.
+
+  ```diff
+  --- a/kern/syscall.c
+  +++ b/kern/syscall.c
+  @@ -176,9 +176,12 @@ sys_page_alloc(envid_t envid, void *va, int perm)
+          if((uintptr_t)va >= UTOP || PGOFF(va)){
+                  return -E_INVAL;
+          }
+  -       if(perm & (~PTE_SYSCALL)){
+  +       
+  +       int req_perm = PTE_U | PTE_P;
+  +       if((perm & req_perm) != req_perm || perm & (~PTE_SYSCALL)){
+                  return -E_INVAL;
+          }
+  +
+          struct Env *e;
+          int err;
+          struct PageInfo *pp;
+  ```
+
+- page_insert() 检查页表项权限的 bug. 非常低级的一个 bug, 把 "&" 写成了 "|".
+
+  ``` diff
+  --- a/kern/pmap.c
+  +++ b/kern/pmap.c
+  @@ -505,11 +505,11 @@ page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
+          if(pte == NULL){
+                  return -E_NO_MEM;
+          }
+  -       if(*pte | PTE_P && PTE_ADDR(*pte) == PTE_ADDR(page2pa(pp))){
+  -               *pte = PTE_ADDR(*pte) | perm | PTE_P;
+  -               return 0;
+  -       }
+  -       if(*pte | PTE_P){
+  +       if(*pte & PTE_P){
+  +               if(PTE_ADDR(*pte) == PTE_ADDR(page2pa(pp))){
+  +                       *pte = PTE_ADDR(*pte) | perm | PTE_P;
+  +                       return 0;
+  +               }
+                  page_remove(pgdir, va);
+          }
+          *pte = PTE_ADDR(page2pa(pp)) | perm | PTE_P;
+  ```
+
+- env_run() 的一个 bug.
+
+  ``` diff
+  --- a/kern/env.c
+  +++ b/kern/env.c
+  @@ -536,7 +536,7 @@ env_run(struct Env *e)
+          //      e->env_tf to sensible values.
+  
+          // LAB 3: Your code here.
+  -       if(curenv != NULL){
+  +       if(curenv && curenv->env_status == ENV_RUNNING){
+                  curenv->env_status = ENV_RUNNABLE;
+          }
+          curenv = e;
+  ```
+
+  导致 primes.c 的测试失败. 错误过程复现:
+
+  - 进程 A 调用 ipc_recv 接受数据, 进入阻塞状态, env_status 等于 ENV_NOT_RUNNABLE, 并调用 sched_yield() 进行调度.
+
+  - sched_yield() 挑选一个进程, 接着调用 env_run() 运行它. 
+  
+  - env_run() 将 curenv 的状态设置为 ENV_RUNNABLE, 此时的 curenv 是进程 A, 导致进程 A 有可能在下次时钟中断时被内核调度运行. 
+  
+    trick 的地方就在于, 对于 primes 这样生成大量进程的程序来说, 容易导致进程 A 在未实际接受到别的进程发送给它的数据之前就被内核调度, 导致数据不一致的 bug.
+
+    具体的错误就是系统调用 sys_ipc_recv() 的返回值(保存在 %eax)等于 12, 12 就是 sys_ipc_recv() 的系统调用的编号.
+
+    ```
+    $ make run-primes-nox
+    ...
+    [00000000] new env 00001000
+    [00001000] new env 00001001
+    CPU 0: 2 [00001001] new env 00001002
+    CPU 0: 3 [00001002] new env 00001003
+    [00001002] user panic in <unknown> at lib/syscall.c:35: syscall 12 returned 12 (> 0)
+    ```
+
+user/primes.c 的基本原理是素数筛, 利用进程实现并发.
 
