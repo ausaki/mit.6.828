@@ -7,6 +7,10 @@
 // It is one of the bits explicitly allocated to user processes (PTE_AVAIL).
 #define PTE_COW		0x800
 
+// dummy declare, otherwise vscode complains error.
+extern volatile pte_t uvpt[];
+extern volatile pde_t uvpd[];
+
 //
 // Custom page fault handler - if faulting page is copy-on-write,
 // map in our own private writable copy.
@@ -25,7 +29,16 @@ pgfault(struct UTrapframe *utf)
 	//   (see <inc/memlayout.h>).
 
 	// LAB 4: Your code here.
+	int valid_perm = PTE_COW | PTE_P;
 
+	if(!(
+		(err & FEC_WR) && 
+		(uvpd[PDX(addr)] & PTE_P) &&
+		((uvpt[PGNUM(addr)] & valid_perm) == valid_perm)
+		)){
+
+		panic("pgfault not caused by COW: err = %08x, va = %08x", err, addr);
+	}
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new
 	// page to the old page's address.
@@ -33,8 +46,19 @@ pgfault(struct UTrapframe *utf)
 	//   You should make three system calls.
 
 	// LAB 4: Your code here.
-
-	panic("pgfault not implemented");
+	addr = ROUNDDOWN(addr, PGSIZE);
+	int perm = PTE_U | PTE_W | PTE_P;
+	if((r = sys_page_alloc(0, PFTEMP, perm)) < 0){
+		panic("pgfault: %e", r);
+	}
+	memcpy(PFTEMP, addr, PGSIZE);
+	if((r = sys_page_map(0, PFTEMP, 0, addr, perm)) < 0){
+		panic("pgfault: %e", r);
+	}
+	if ((r = sys_page_unmap(0, PFTEMP)) < 0){
+		panic("pgfault: %e", r);
+	}
+	
 }
 
 //
@@ -52,9 +76,25 @@ static int
 duppage(envid_t envid, unsigned pn)
 {
 	int r;
-
+	
 	// LAB 4: Your code here.
-	panic("duppage not implemented");
+	// extern unsigned char uvpt[], uvpd[];
+	int perm = PTE_U | PTE_P;
+	void *va = (void *)(pn << PGSHIFT);
+
+	if(uvpt[pn] & (PTE_W | PTE_COW)){
+		perm |= PTE_COW;
+		if((r = sys_page_map(0, va, envid, va, perm)) < 0){
+			panic("duppage: %e", r);
+		}
+		if((r = sys_page_map(0, va, 0, va, perm)) < 0){
+			panic("duppage: %e", r);
+		}
+	} else {
+		if((r = sys_page_map(0, va, envid, va, PGOFF(uvpt[pn]))) < 0){
+			panic("duppage: %e", r);
+		}
+	}
 	return 0;
 }
 
@@ -78,7 +118,35 @@ envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	panic("fork not implemented");
+	envid_t envid;
+	int err;
+
+	set_pgfault_handler(pgfault);
+
+	envid = sys_exofork();
+	if(envid < 0){
+		panic("fork: %e", envid);
+	}
+	if(envid == 0){
+		// child
+		thisenv = &envs[ENVX(sys_getenvid())];
+		return 0;
+	}
+	extern unsigned char end[];
+
+	uintptr_t addr = 0;
+
+	for (; addr < USTACKTOP; addr += PGSIZE){
+		if((uvpd[PDX(addr)] & PTE_P) && (uvpt[PGNUM(addr)] & PTE_P)){
+			duppage(envid, PGNUM(addr));
+		}
+	}
+
+	_set_pgfault_upcall(envid);
+
+	if ((err = sys_env_set_status(envid, ENV_RUNNABLE)) < 0)
+		panic("fork: %e", err);
+	return envid;
 }
 
 // Challenge!

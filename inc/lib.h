@@ -37,6 +37,7 @@ void	exit(void);
 
 // pgfault.c
 void	set_pgfault_handler(void (*handler)(struct UTrapframe *utf));
+void 	_set_pgfault_upcall(envid_t);
 
 // readline.c
 char*	readline(const char *buf);
