@@ -18,3 +18,4 @@
 
 - [x86 idt](https://pdos.csail.mit.edu/6.828/2018/lec/x86_idt.pdf)
 
+- [quiz 1](https://pdos.csail.mit.edu/6.828/2018/quiz/q18_1_sol.pdf)
