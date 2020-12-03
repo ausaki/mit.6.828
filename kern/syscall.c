@@ -134,7 +134,22 @@ sys_env_set_trapframe(envid_t envid, struct Trapframe *tf)
 	// LAB 5: Your code here.
 	// Remember to check whether the user has supplied us with a good
 	// address!
-	panic("sys_env_set_trapframe not implemented");
+	struct Env *e;
+	int r;
+	if((r = envid2env(envid, &e, 1)) < 0){
+		return r;
+	}
+	user_mem_assert(e, tf, sizeof(struct Trapframe), PTE_U | PTE_P);
+
+	tf->tf_ds = GD_UD | 3;
+	tf->tf_es = GD_UD | 3;
+	tf->tf_ss = GD_UD | 3;
+	tf->tf_cs = GD_UT | 3;
+	tf->tf_eflags |= FL_IF;
+	tf->tf_eflags &= ~FL_IOPL_3;
+	
+	memmove(&e->env_tf, tf, sizeof(struct Trapframe));
+	return 0;
 }
 
 // Set the page fault upcall for 'envid' by modifying the corresponding struct
@@ -243,7 +258,9 @@ sys_page_map(envid_t srcenvid, void *srcva,
 	 	(uintptr_t)dstva >= UTOP || PGOFF(dstva)){
 		return -E_INVAL;
 	}
-	if(perm & (~PTE_SYSCALL)){
+	int req_perm = PTE_U | PTE_P;
+	if((perm & req_perm) != req_perm || perm & (~PTE_SYSCALL)){
+		cprintf("perm: %08x\n", PGOFF(perm));
 		return -E_INVAL;
 	}
 	struct Env *src_env, *dst_env;
@@ -261,6 +278,7 @@ sys_page_map(envid_t srcenvid, void *srcva,
 	}
 
 	if((perm & PTE_W) && !(*pte & PTE_W)){
+		cprintf("2\n");
 		return -E_INVAL;
 	}
 	if((err = envid2env(dstenvid, &dst_env, 1)) < 0){
@@ -450,6 +468,8 @@ syscall(uint32_t syscallno, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		return sys_ipc_try_send((envid_t)a1, a2, (void *)a3, a4);
 	case SYS_ipc_recv:
 		return sys_ipc_recv((void *)a1);
+	case SYS_env_set_trapframe:
+		return sys_env_set_trapframe((envid_t)a1, (struct Trapframe *)a2);
 	default:
 		return -E_INVAL;
 		break;

@@ -80,10 +80,16 @@ duppage(envid_t envid, unsigned pn)
 	// LAB 4: Your code here.
 	// extern unsigned char uvpt[], uvpd[];
 	int perm = PTE_U | PTE_P;
+	int old_perm = PGOFF(uvpt[pn]);
 	void *va = (void *)(pn << PGSHIFT);
 
-	if(uvpt[pn] & (PTE_W | PTE_COW)){
-		perm |= PTE_COW;
+	if(old_perm & PTE_SHARE){
+		perm = (old_perm & PTE_SYSCALL);
+		if((r = sys_page_map(0, va, envid, va, perm)) < 0){
+			panic("duppage: %e", r);
+		}
+	} else if(old_perm & (PTE_W | PTE_COW)){
+		perm = (old_perm & PTE_SYSCALL & ~PTE_W) | PTE_COW;
 		if((r = sys_page_map(0, va, envid, va, perm)) < 0){
 			panic("duppage: %e", r);
 		}
@@ -91,7 +97,8 @@ duppage(envid_t envid, unsigned pn)
 			panic("duppage: %e", r);
 		}
 	} else {
-		if((r = sys_page_map(0, va, envid, va, PGOFF(uvpt[pn]))) < 0){
+		perm = old_perm & PTE_SYSCALL;
+		if((r = sys_page_map(0, va, envid, va, perm)) < 0){
 			panic("duppage: %e", r);
 		}
 	}
