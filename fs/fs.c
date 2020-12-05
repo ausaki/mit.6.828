@@ -3,6 +3,9 @@
 
 #include "fs.h"
 
+struct Super *super;		// superblock
+uint32_t *bitmap;		// bitmap blocks mapped in memory
+
 // --------------------------------------------------------------
 // Super block
 // --------------------------------------------------------------
@@ -62,7 +65,14 @@ alloc_block(void)
 	// super->s_nblocks blocks in the disk altogether.
 
 	// LAB 5: Your code here.
-	panic("alloc_block not implemented");
+	uint32_t bitmap_blocks = (super->s_nblocks + BLKBITSIZE - 1 ) / BLKBITSIZE;
+	for(uint32_t i = 2 + bitmap_blocks; i < super->s_nblocks; i++){
+		if(block_is_free(i)){
+			bitmap[i / 32] &= ~(1 << (i % 32));
+			flush_block(diskaddr(i / BLKBITSIZE + 2));
+			return i;
+		}
+	}
 	return -E_NO_DISK;
 }
 
@@ -134,8 +144,34 @@ fs_init(void)
 static int
 file_block_walk(struct File *f, uint32_t filebno, uint32_t **ppdiskbno, bool alloc)
 {
-       // LAB 5: Your code here.
-       panic("file_block_walk not implemented");
+	// LAB 5: Your code here.
+	int block = 0;
+	uint32_t * indirect;
+
+	if(filebno >= NDIRECT + NINDIRECT){
+		return -E_INVAL;
+	}
+	if(filebno < NDIRECT){
+		if(ppdiskbno){
+			*ppdiskbno = &(f->f_direct[filebno]);
+		}
+		return 0;
+	}
+	if(f->f_indirect == 0 && !alloc){
+		return -E_NOT_FOUND;
+	}
+	if(f->f_indirect == 0 && alloc){
+		if((block = alloc_block()) < 0){
+			return block;
+		}
+		memset(diskaddr(block), 0, BLKSIZE);
+		f->f_indirect = block;
+	}
+	if(ppdiskbno){
+		indirect = (uint32_t *)diskaddr(f->f_indirect);
+		*ppdiskbno = &indirect[filebno - NDIRECT];
+	}
+	return 0;
 }
 
 // Set *blk to the address in memory where the filebno'th
@@ -149,8 +185,21 @@ file_block_walk(struct File *f, uint32_t filebno, uint32_t **ppdiskbno, bool all
 int
 file_get_block(struct File *f, uint32_t filebno, char **blk)
 {
-       // LAB 5: Your code here.
-       panic("file_get_block not implemented");
+	// LAB 5: Your code here.
+	uint32_t *pblockno, block;
+	int r;
+    if((r = file_block_walk(f, filebno, &pblockno, 1)) < 0){
+		return r;
+	}
+	if(*pblockno == 0){
+		if((block = alloc_block()) < 0){
+			return r;
+		}
+		memset(diskaddr(block), 0, BLKSIZE);
+		*pblockno = block;
+	}
+	*blk = (char *)diskaddr(*pblockno);
+	return 0;
 }
 
 // Try to find a file named "name" in dir.  If so, set *file to it.
@@ -420,6 +469,8 @@ file_set_size(struct File *f, off_t newsize)
 		file_truncate_blocks(f, newsize);
 	f->f_size = newsize;
 	flush_block(f);
+	// file_truncate_blocks() 可能会使 f->f_indirect 指向的 block 发生改变. 
+	// 不过没有必要 flush_block, 因为已经flush_block(f)了, f->f_size 已经决定了文件包含的block数量, f->f_indirect 中被 truncate 的 block 是非法的.
 	return 0;
 }
 

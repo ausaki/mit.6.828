@@ -6,7 +6,7 @@
 #define UTEMP3			(UTEMP2 + PGSIZE)
 
 // Helper functions for spawn.
-static int init_stack(envid_t child, const char **argv, uintptr_t *init_esp);
+static int init_stack(envid_t child, const char **argv, struct Trapframe *tf);
 static int map_segment(envid_t child, uintptr_t va, size_t memsz,
 		       int fd, size_t filesz, off_t fileoffset, int perm);
 static int copy_shared_pages(envid_t child);
@@ -107,7 +107,7 @@ spawn(const char *prog, const char **argv)
 	child_tf = envs[ENVX(child)].env_tf;
 	child_tf.tf_eip = elf->e_entry;
 
-	if ((r = init_stack(child, argv, &child_tf.tf_esp)) < 0)
+	if ((r = init_stack(child, argv, &child_tf)) < 0)
 		return r;
 
 	// Set up program segments as defined in ELF header.
@@ -184,7 +184,7 @@ spawnl(const char *prog, const char *arg0, ...)
 // to the initial stack pointer with which the child should start.
 // Returns < 0 on failure.
 static int
-init_stack(envid_t child, const char **argv, uintptr_t *init_esp)
+init_stack(envid_t child, const char **argv, struct Trapframe *tf)
 {
 	size_t string_size;
 	int argc, i, r;
@@ -244,7 +244,7 @@ init_stack(envid_t child, const char **argv, uintptr_t *init_esp)
 	argv_store[-1] = UTEMP2USTACK(argv_store);
 	argv_store[-2] = argc;
 
-	*init_esp = UTEMP2USTACK(&argv_store[-2]);
+	tf->tf_esp = UTEMP2USTACK(&argv_store[-2]);
 
 	// After completing the stack, map it into the child's address space
 	// and unmap it from ours!
@@ -302,6 +302,19 @@ static int
 copy_shared_pages(envid_t child)
 {
 	// LAB 5: Your code here.
+	uintptr_t addr = 0;
+	int r, perm;
+
+	for (; addr < USTACKTOP; addr += PGSIZE){
+		if((uvpd[PDX(addr)] & PTE_P)){
+			perm = uvpt[PGNUM(addr)];
+			if(perm & PTE_SHARE){
+				if((r = sys_page_map(0, (void *)addr, child, (void *)addr, perm & PTE_SYSCALL)) < 0){
+					panic("copy_shared_pages: %e", r);
+				}
+			}
+		}
+	}
 	return 0;
 }
 
