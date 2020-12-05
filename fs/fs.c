@@ -469,6 +469,8 @@ file_set_size(struct File *f, off_t newsize)
 		file_truncate_blocks(f, newsize);
 	f->f_size = newsize;
 	flush_block(f);
+	// file_truncate_blocks() 可能会使 f->f_indirect 指向的 block 发生改变. 
+	// 不过没有必要 flush_block, 因为已经flush_block(f)了, f->f_size 已经决定了文件包含的block数量, f->f_indirect 中被 truncate 的 block 是非法的.
 	return 0;
 }
 
