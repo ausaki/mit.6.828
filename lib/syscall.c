@@ -122,3 +122,11 @@ sys_time_msec(void)
 {
 	return (unsigned int) syscall(SYS_time_msec, 0, 0, 0, 0, 0, 0);
 }
+
+int sys_net_tx_packet(void *buf, size_t len){
+	return syscall(SYS_net_tx_packet, 0, (uint32_t)buf, len, 0, 0, 0);
+}
+
+int sys_net_rx_packet(void *buf, size_t len){
+	return syscall(SYS_net_rx_packet, 0, (uint32_t)buf, len, 0, 0, 0);
+}

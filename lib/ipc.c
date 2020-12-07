@@ -65,7 +65,7 @@ ipc_send(envid_t to_env, uint32_t val, void *pg, int perm)
 		sys_yield();
 	}
 	if(err < 0){
-		panic("ipc_send: %e", err);
+		panic("ipc_send: %e %08x", err, to_env);
 	}
 }
 

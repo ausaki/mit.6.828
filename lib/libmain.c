@@ -22,6 +22,8 @@ libmain(int argc, char **argv)
 	// save the name of the program so that panic() can use it
 	if (argc > 0)
 		binaryname = argv[0];
+	
+	set_pgfault_handler(default_pgfault_handler);
 
 	// call user main routine
 	umain(argc, argv);

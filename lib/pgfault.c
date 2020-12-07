@@ -45,3 +45,25 @@ set_pgfault_handler(void (*handler)(struct UTrapframe *utf))
 	// Save handler pointer for assembly to call.
 	_pgfault_handler = handler;
 }
+
+/*
+ * increase user stack
+ */
+void default_pgfault_handler(struct UTrapframe *utf){
+	uint32_t addr = utf->utf_fault_va;
+	int r;
+
+	int ustackbottom = USTACKTOP - 100 * PGSIZE;
+	if(addr >= USTACKTOP){
+		panic("default_pgfault_handler: invalid addr = %08x", addr);
+	}
+	if(addr < ustackbottom){
+		panic("default_pgfault_handler: stackoverflow");
+	}
+	
+	addr = ROUNDDOWN(addr, PGSIZE);
+	int perm = PTE_U | PTE_W | PTE_P;
+	if((r = sys_page_alloc(0, (void *)addr, perm)) < 0){
+		panic("default_pgfault_handler: %e", r);
+	}
+}

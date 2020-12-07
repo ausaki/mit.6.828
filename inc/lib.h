@@ -40,6 +40,7 @@ void	exit(void);
 // pgfault.c
 void	set_pgfault_handler(void (*handler)(struct UTrapframe *utf));
 void 	_set_pgfault_upcall(envid_t);
+void default_pgfault_handler(struct UTrapframe *utf);
 
 // readline.c
 char*	readline(const char *buf);
@@ -61,6 +62,8 @@ int	sys_page_unmap(envid_t env, void *pg);
 int	sys_ipc_try_send(envid_t to_env, uint32_t value, void *pg, int perm);
 int	sys_ipc_recv(void *rcv_pg);
 unsigned int sys_time_msec(void);
+int sys_net_tx_packet(void *buf, size_t len);
+int sys_net_rx_packet(void *buf, size_t len);
 
 // This must be inlined.  Exercise for reader: why?
 static inline envid_t __attribute__((always_inline))
